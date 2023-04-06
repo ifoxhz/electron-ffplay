@@ -1,6 +1,7 @@
 # Simple video player using electron & ffplay (as node addon)
 
-![avatar](./ffplay.png)
+#port to node-gyp build, and upgrade ffmpeg.
+
 
 # License
 * [FFMpeg] (https://ffmpeg.org/legal.html)

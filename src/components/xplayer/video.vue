@@ -15,7 +15,6 @@ import YUVCanvas from './yuv-canvas'
 import {DetectionCanvas} from './detection-canvas'
 import {DecodeSync} from './test_decode'
 import path from 'path'
-import sdl from '@kmamal/sdl'
 
 let inDNNProcessing = false
 
@@ -23,16 +22,15 @@ const rtpsPatern = /^rtsp:\/\/(.*)/
 const audioPattern = /Audio\: (.*)/;
 const videoPattern = /Video\: (.*)/;
 
-
 const width = 640
 const height = 480
 
-
 function PlayOverFFmpeg (core, url, transport) {
+  const arg = {title: '郑永', width, height}
+  // let window = sdl.video.createWindow(arg);
+  // SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
-  const arg = {title:"郑永",width,height}
-  //let window = sdl.video.createWindow(arg);
-        //SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+  // window.on('*', console.log)
   const rtspMath = url.match(rtpsPatern)
 
   const vargs = []
@@ -49,18 +47,30 @@ function PlayOverFFmpeg (core, url, transport) {
   }
 
   vargs.push(url)
+  // vargs.push('estor://CE2D70ED/p/e4671e2670ed1671090462669806349/76eff166d3ddf7a0ce69944ce16334e4')
+  // vargs.push('-ss')
+  // vargs.push(String(10))
+  // vargs.push('-token')
+  // vargs.push('eyJhY3Rpb25UeXBlIjoxOTQsImV4cGlyZVRzIjoxNjgyMzE1NDYwLCJvYmplY3RVcmkiOiIiLCJwb2RJZCI6ImU0NjcxZTI2NzBlZDE2NzEwOTA0NjI2Njk4MDYzNDkifQ==:121db9db96b629da3fd42285bea3b2b242c5716c:a3a6e6a676:0')
+   
+  // "estor://CE2D70ED/p/e4671e2670ed1671090462669806349/76eff166d3ddf7a0ce69944ce16334e4"
+  // vargs.push('-pixel_format')
+  // vargs.push('yuv420p12')
 
+  vargs.push("-vf")
+  vargs.push("rotate")
+
+  
   let ff 
   if (process.env.NODE_ENV === 'development' && path.basename(url) === 'foreman_352x288_30fps.h264') {
     ff = DecodeSync(vargs)
   } else {
-    console.log('create ff instanc *********',vargs)
+    console.log('create ff instanc *********', vargs)
     try {
       ff = new PlayBack(...vargs)
-    } catch(err) {
-      console.log('failedt to create ff instanc *********',err)
+    } catch (err) {
+      console.log('failedt to create ff instanc *********', err)
     }
-     
   }
 
   let _authRequire = false
@@ -84,14 +94,14 @@ function PlayOverFFmpeg (core, url, transport) {
   });
 
   ff.on('yuv', frame => {
-    //console.log("receive frame yuv")
+    // console.log("receive frame yuv")
     frame.cropLeft = 0;
     frame.cropTop = 0;
     frame.cropWidth = frame.width;
     frame.cropHeight = frame.height;
 
     core._renderFrame(frame);
-    //console.log("receive frame yuv end",frame)
+    // console.log("receive frame yuv end",frame)
   })
 
   ff.on('meta', ({duration, width, height, info}) => {

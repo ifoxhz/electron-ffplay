@@ -10,7 +10,8 @@ const nodeMajor2Abis = {
   '12': 72,
   '13': 79,
   '14': 83,
-  '15': 88
+  '15': 88,
+  '16': 72
 }
 
 const ABI = nodeMajor2Abis[process.versions.node.split('.')[0]]

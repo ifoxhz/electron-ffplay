@@ -475,6 +475,7 @@ static int opt_infbuf(void *optctx, const char *opt, const char *arg)
 #if defined(BUILD_WITH_AUDIO_FILTER) || defined(BUILD_WITH_VIDEO_FILTER)
 static int opt_add_vfilter(void *optctx, const char *opt, const char *arg)
 {
+   av_log(NULL, AV_LOG_INFO, "yong %s filter %s :\n", opt,arg);
   auto ctx = (PlayBackContext*)optctx;
   ctx->vfilters_list.push_back(arg);
   return 0;
@@ -556,6 +557,13 @@ static int opt_show_status(void *optctx, const char *opt, const char *arg)
   ctx->showStatus = true;
   return 0;
 }
+static int opt_token(void *optctx, const char *opt, const char *arg)
+{
+  auto ctx = (PlayBackContext*)optctx;
+  ctx->token = arg;
+  return 0;
+}
+
 
 static const OptionDef options[] = {
     { "loglevel",    HAS_ARG,              opt_loglevel,          "set logging level", "loglevel" },
@@ -594,6 +602,7 @@ static const OptionDef options[] = {
     { "scodec",      HAS_ARG | OPT_EXPERT, opt_scodec,            "force subtitle decoder", "decoder_name" },
     { "vcodec",      HAS_ARG | OPT_EXPERT, opt_vcodec,            "force video decoder",    "decoder_name" },
     { "stats",       OPT_BOOL | OPT_EXPERT,opt_show_status,       "show status", "" },
+    { "token",       HAS_ARG,              opt_token,             "estor token", "token" },
     { NULL, },
 };
 
@@ -1252,6 +1261,8 @@ int ConverterContext::convert(int src_format, int src_width, int src_height, con
   av_log(NULL, AV_LOG_ERROR, "yong subtitle convert_ctx start:.\n");
   }
 
+  av_log(NULL, AV_LOG_ERROR, "yong subtitle convert_ctx start %d\n",src_format);
+
   int buffer_size = av_image_fill_arrays(frame_->data, frame_->linesize, buffer, target_fmt,
                         src_width, src_height, 1);
   if (buffer_size > buffer_size_) {
@@ -1835,7 +1846,7 @@ void PlayBackContext::streamOpen() {
     throw runtime_error("Could not allocate context.");
   }
 
-  av_log(NULL, AV_LOG_INFO, "yong avformat_alloc_context start :.\n");
+  av_log(NULL, AV_LOG_INFO, "yong avformat_alloc_context start :\n");
 
 
   audio_volume = av_clip(audio_volume, 0, 100);
@@ -1855,6 +1866,12 @@ void PlayBackContext::streamOpen() {
     av_dict_set(&format_opts, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
     scan_all_pmts_set = true;
   }
+  if (token != "") {
+    av_dict_set(&format_opts, "sync",token.c_str(), 0);
+  }
+ // av_dict_set(&format_opts,"autorotate", "1", 0);
+
+  av_log(NULL, AV_LOG_INFO, "yong %s  pa %s :\n",av_dict_get(format_opts, "token", NULL, AV_DICT_MATCH_CASE),token.c_str());
 
   int err = avformat_open_input(&ic, filename.c_str(), iformat, &format_opts);
   if (err < 0) {
@@ -2628,6 +2645,7 @@ static int configure_filtergraph(AVFilterGraph *graph, const char *filtergraph,
     int ret, i;
     int nb_filters = graph->nb_filters;
     AVFilterInOut *outputs = NULL, *inputs = NULL;
+    
 
     if (filtergraph && filtergraph[0]) {
         outputs = avfilter_inout_alloc();
@@ -2665,6 +2683,42 @@ fail:
     return ret;
 }
 
+#define CONV_FP(x) ((double) (x)) / (1 << 16)
+
+double av_display_rotation_get(const int32_t matrix[9])
+{
+    double rotation, scale[2];
+
+    scale[0] = hypot(CONV_FP(matrix[0]), CONV_FP(matrix[3]));
+    scale[1] = hypot(CONV_FP(matrix[1]), CONV_FP(matrix[4]));
+
+    if (scale[0] == 0.0 || scale[1] == 0.0)
+        return NAN;
+
+    rotation = atan2(CONV_FP(matrix[1]) / scale[1],
+                     CONV_FP(matrix[0]) / scale[0]) * 180 / M_PI;
+
+    return -rotation;
+}
+
+static double get_rotation(int32_t *displaymatrix)
+{
+    double theta = 0;
+    if (displaymatrix)
+        theta = -round(av_display_rotation_get((int32_t*) displaymatrix));
+
+    theta -= 360*floor(theta/360 + 0.9/360);
+
+    if (fabs(theta - 90*round(theta/90)) > 2)
+        av_log(NULL, AV_LOG_WARNING, "Odd rotation angle.\n"
+               "If you want to help, upload a sample "
+               "of this file to https://streams.videolan.org/upload/ "
+               "and contact the ffmpeg-devel mailing list. (ffmpeg-devel@ffmpeg.org)");
+
+    return theta;
+}
+
+
 int PlayBackContext::configure_video_filters(AVFilterGraph *graph, const char *vfilters, AVFrame *frame)
 {
     enum AVPixelFormat pix_fmts[2];
@@ -2677,6 +2731,11 @@ int PlayBackContext::configure_video_filters(AVFilterGraph *graph, const char *v
     AVDictionaryEntry *e = NULL;
     int nb_pix_fmts = 0;
     int i;
+
+    int32_t *displaymatrix = NULL;
+    double theta ;
+    char rotate_buf[64];
+    
 
     pix_fmts[0] = AV_PIX_FMT_YUV420P;
     pix_fmts[1] = AV_PIX_FMT_NONE;
@@ -2734,6 +2793,16 @@ int PlayBackContext::configure_video_filters(AVFilterGraph *graph, const char *v
                                                                              \
     last_filter = filt_ctx;                                                  \
 } while (0)
+
+
+    //av_stream_get_side_data(roat)
+    //rota = -180; 
+    displaymatrix = (int32_t *)av_stream_get_side_data(this->video_st, AV_PKT_DATA_DISPLAYMATRIX, NULL);
+    
+    theta = get_rotation(displaymatrix);
+    av_log(NULL, AV_LOG_ERROR, "yong configure_video_filters %f", theta);
+    snprintf(rotate_buf, sizeof(rotate_buf), "%f*PI/180", theta);
+    INSERT_FILT("rotate", rotate_buf);
 
     if ((ret = configure_filtergraph(graph, vfilters, filt_src, last_filter)) < 0)
         goto fail;
@@ -3652,12 +3721,12 @@ void PlayBackContext::video_image_display()
 	if (!vp->uploaded) {
     if (onIYUVDisplay) {
       auto frame = vp->frame;
-      if (frame->format != yuv_ctx_.target_fmt) {
+      if (frame->format != yuv_ctx_.target_fmt && frame->format == AV_PIX_FMT_YUV420P10LE){
         if (yuv_ctx_.convert(frame) < 0) {
           vp->uploaded = 1;
           return;
         }
-        // av_frame_unref(frame);
+        av_frame_unref(frame);
         frame = yuv_ctx_.frame_;
       }
      // av_log(NULL, AV_LOG_ERROR, "yong onIYUVDisplay start %d:.\n", id++);
@@ -3689,11 +3758,10 @@ void PlayBackContext::video_image_display()
             sub_rect->w = av_clip(sub_rect->w, 0, sp->width  - sub_rect->x);
             sub_rect->h = av_clip(sub_rect->h, 0, sp->height - sub_rect->y);
 
-            if (sub_yuv_ctx_.convert(AV_PIX_FMT_PAL8, sub_rect->w, sub_rect->h, (const uint8_t * const *)sub_rect->data, sub_rect->linesize) >= 0) {
+            /*if (sub_yuv_ctx_.convert(AV_PIX_FMT_PAL8, sub_rect->w, sub_rect->h, (const uint8_t * const *)sub_rect->data, sub_rect->linesize) >= 0) {
                 av_log(NULL, AV_LOG_ERROR, "yong subtitle display %d:.\n", id);
-              auto frame = sub_yuv_ctx_.frame_;
-              onIYUVDisplay(frame, sp->pts, ptsToFrameId(sp->pts));  
-            }
+              auto frame = sub_yuv_ctx_.frame_;  
+            }*/
           }
           sp->uploaded = 1;
         }

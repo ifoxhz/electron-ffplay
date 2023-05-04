@@ -146,6 +146,7 @@
   },
   "dependencies": {
     "@kmamal/sdl": "^0.6.8",
+    "ffi-napi": "^4.0.3",
     "node-addon-api": "^6.0.0",
     "node-sass": "8.0.0"
   }

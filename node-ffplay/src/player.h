@@ -608,6 +608,7 @@ public:
   string audio_codec_name;
   string subtitle_codec_name;
   string video_codec_name;
+  string token;
 
   bool showStatus{false};
 };
